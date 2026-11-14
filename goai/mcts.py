@@ -1,10 +1,11 @@
 """PUCT Monte-Carlo tree search with GPU-batched leaf evaluation.
 
-Key design points (the engine contribution of the project):
+Key design points:
   - PUCT selection with first-play-urgency (cFPU), following KataGo.
-  - Leaves are collected into a batch and evaluated in a single GPU forward pass
-    ("GPU batch parallel evaluation at leaf nodes").
-  - Dirichlet noise at the root for exploration.
+  - Only the top-`max_children` moves (by policy prior) are expanded per node,
+    keeping the tree small (Leela Zero / KataGo style).
+  - Leaves are collected with *virtual loss* so a batch explores distinct
+    leaves, then evaluated in one GPU forward pass.
 """
 from __future__ import annotations
 
@@ -37,8 +38,9 @@ class Node:
 
 class MCTS:
     def __init__(self, net, device="cuda", c_puct=1.1, c_fpu=0.2,
-                 num_simulations=200, batch_size=64,
-                 dirichlet_alpha=0.03, dirichlet_eps=0.25):
+                 num_simulations=100, batch_size=48,
+                 dirichlet_alpha=0.03, dirichlet_eps=0.25,
+                 max_children=48):
         self.net = net.eval()
         self.device = device
         self.c_puct = c_puct
@@ -47,6 +49,7 @@ class MCTS:
         self.batch_size = batch_size
         self.dirichlet_alpha = dirichlet_alpha
         self.dirichlet_eps = dirichlet_eps
+        self.max_children = max_children
 
     # ---- neural net ----
     def _evaluate(self, boards):
@@ -67,16 +70,25 @@ class MCTS:
 
         if dirichlet:
             board_legal = legal.copy()
-            board_legal[-1] = False  # no noise on the pass move
+            board_legal[-1] = False
             n = int(board_legal.sum())
             if n > 0:
                 noise = np.random.dirichlet([self.dirichlet_alpha] * n)
                 probs[board_legal] = ((1 - self.dirichlet_eps) * probs[board_legal]
                                       + self.dirichlet_eps * noise)
 
-        node.is_expanded = True
-        for move in np.nonzero(legal)[0]:
+        # expand only the top-max_children moves (+ pass) to keep the tree small
+        selected = {node.board.pass_move}
+        for move in np.argsort(probs)[::-1]:
             move = int(move)
+            if move == node.board.pass_move or not legal[move]:
+                continue
+            selected.add(move)
+            if len(selected) >= self.max_children:
+                break
+
+        node.is_expanded = True
+        for move in selected:
             child_board = node.board.clone()
             child_board.play(move)
             node.children[move] = Node(child_board, move=move, parent=node,
@@ -91,7 +103,6 @@ class MCTS:
         best_score = -1e30
         for c in node.children.values():
             if c.visit_count == 0:
-                # first-play urgency (KataGo): V(c) = V(n) - cFPU*sqrt(P_explored)
                 q = parent_q - self.c_fpu * math.sqrt(max(explored_prior, 1e-8))
             else:
                 q = c.q()
@@ -102,22 +113,30 @@ class MCTS:
                 best_child = c
         return best_child
 
-    def _backup(self, path, value):
-        for node in reversed(path):
-            node.visit_count += 1
-            node.value_sum += value
-            value = -value
+    def _backup_virtual(self, path, value):
+        """Convert virtual loss to real backup. path[0] is the root (real);
+        path[1:] received virtual loss (visit+1, value-1)."""
+        val = value
+        for i in range(len(path) - 1, 0, -1):
+            path[i].value_sum += (val + 1.0)
+            val = -val
+        path[0].visit_count += 1
+        path[0].value_sum += val
 
     def _run_batch(self, root):
         leaves = []
-        while len(leaves) < self.batch_size:
+        while len(leaves) < self.batch_size and root.visit_count < self.num_simulations:
             node = root
-            path = []
+            path = [root]
             while node.is_expanded and not node.board.done:
-                path.append(node)
-                node = self._select(node)
+                child = self._select(node)
+                child.visit_count += 1   # virtual loss
+                child.value_sum -= 1.0   # pessimistic (assume a loss)
+                path.append(child)
+                node = child
             if node.board.done:
-                self._backup(path, -node.board.outcome_for(node.board.current))
+                value = node.board.outcome_for(node.board.current)
+                self._backup_virtual(path, value)
             else:
                 leaves.append((node, path))
         if not leaves:
@@ -125,13 +144,11 @@ class MCTS:
         logits, values = self._evaluate([n.board for n, _ in leaves])
         for (leaf, path), logit, val in zip(leaves, logits, values):
             self._expand(leaf, logit)
-            leaf.visit_count = 1
-            leaf.value_sum = float(val)
-            self._backup(path, -float(val))
+            self._backup_virtual(path, float(val))
 
     # ---- public ----
-    def search(self, board: GoBoard, dirichlet=True) -> np.ndarray:
-        """Run MCTS from `board`, return visit-count policy over n+1 moves."""
+    def search(self, board: GoBoard, dirichlet=True):
+        """Run MCTS from `board`; return (policy over n+1 moves, root value)."""
         root = Node(board.clone())
         logits, values = self._evaluate([board])
         self._expand(root, logits[0], dirichlet=dirichlet)
@@ -139,7 +156,7 @@ class MCTS:
         root.value_sum = float(values[0])
         while root.visit_count < self.num_simulations:
             self._run_batch(root)
-        return self._policy(root)
+        return self._policy(root), root.q()
 
     def _policy(self, root) -> np.ndarray:
         n = root.board.n + 1

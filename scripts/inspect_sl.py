@@ -12,7 +12,7 @@ net = net.cuda().eval()
 
 m = MCTS(net, device="cuda", num_simulations=300, batch_size=64)
 b = GoBoard(size=19)
-probs = m.search(b, dirichlet=False)
+probs, _ = m.search(b, dirichlet=False)
 top = np.argsort(probs)[::-1][:8]
 print("top moves on empty 19x19 board (row,col : visit_prob):")
 for i in top:

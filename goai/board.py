@@ -37,7 +37,6 @@ class GoBoard:
         self.current = BLACK
         self.consecutive_passes = 0
         self.ko_point = -1                              # forbidden point under simple ko
-        self.move_history: list[int] = []
         self.recent: list[np.ndarray] = [self.board.copy()]  # newest last
         self.done = False
         self.winner = EMPTY
@@ -62,7 +61,6 @@ class GoBoard:
         b.current = self.current
         b.consecutive_passes = self.consecutive_passes
         b.ko_point = self.ko_point
-        b.move_history = list(self.move_history)
         b.recent = [x.copy() for x in self.recent]
         b.done = self.done
         b.winner = self.winner
@@ -172,7 +170,6 @@ class GoBoard:
             else:
                 self.ko_point = -1
 
-        self.move_history.append(move)
         self.recent.append(self.board.copy())
         if len(self.recent) > self.history_len:
             self.recent.pop(0)

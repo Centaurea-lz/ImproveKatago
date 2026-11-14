@@ -4,6 +4,7 @@ Usage (connection info via env vars):
   GO_HOST=... GO_PORT=24062 GO_USER=root GO_PW=... python remote.py run "command"
   GO_HOST=... GO_PW=... python remote.py put <local_dir> <remote_dir>
   GO_HOST=... GO_PW=... python remote.py put_file <local_file> <remote_path>
+  GO_HOST=... GO_PW=... python remote.py get <remote_file> <local_path>
 """
 import argparse
 import os
@@ -80,9 +81,17 @@ def put_file(local, remote):
     c.close()
 
 
+def get_file(remote, local):
+    c = _client()
+    sftp = c.open_sftp()
+    sftp.get(remote, local)
+    sftp.close()
+    c.close()
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["run", "put", "put_file"])
+    ap.add_argument("action", choices=["run", "put", "put_file", "get"])
     ap.add_argument("arg1")
     ap.add_argument("arg2", nargs="?")
     a = ap.parse_args()
@@ -95,6 +104,9 @@ if __name__ == "__main__":
     elif a.action == "put":
         put_dir(a.arg1, a.arg2)
         print(f"uploaded {a.arg1} -> {a.arg2}")
-    else:
+    elif a.action == "put_file":
         put_file(a.arg1, a.arg2)
         print(f"uploaded {a.arg1} -> {a.arg2}")
+    else:
+        get_file(a.arg1, a.arg2)
+        print(f"downloaded {a.arg1} -> {a.arg2}")

@@ -22,9 +22,21 @@ def test_wrong_size_skipped():
     assert sgf_to_samples(sgf19.encode(), board_size=9) == []
 
 
+def test_moves_to_sgf_roundtrip():
+    from goai.board import BLACK
+    from goai.sgf_data import moves_to_sgf
+    size = 9
+    moves = [40, 30, 20, 47, size * size]  # last is a pass
+    s = moves_to_sgf(moves, size, 7.5, BLACK)
+    samples = sgf_to_samples(s.encode(), board_size=size)
+    assert [m for _, m, _ in samples] == moves
+
+
 if __name__ == "__main__":
     test_sgf_to_samples()
     print("PASS test_sgf_to_samples")
     test_wrong_size_skipped()
     print("PASS test_wrong_size_skipped")
+    test_moves_to_sgf_roundtrip()
+    print("PASS test_moves_to_sgf_roundtrip")
     print("all sgf tests passed")

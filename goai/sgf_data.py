@@ -13,7 +13,7 @@ import os
 import numpy as np
 from sgfmill import sgf
 
-from .board import GoBoard
+from .board import BLACK, GoBoard
 from .features import encode
 
 
@@ -93,3 +93,23 @@ def build_dataset(sgf_dir, out_path, board_size=9, max_samples=1_000_000):
         raise RuntimeError("no samples parsed from " + sgf_dir)
     np.savez_compressed(out_path, X=X[:idx], move=M[:idx], value=V[:idx])
     return idx
+
+
+def moves_to_sgf(moves, size, komi, winner):
+    """Convert a game (flat move indices, pass=size*size) to SGF text.
+
+    `winner` is BLACK(1) or WHITE(2). Coordinates use the SGF convention
+    (top-left origin); our board uses row-from-bottom, so rows are flipped.
+    """
+    head = (f"(;GM[1]FF[4]CA[UTF-8]SZ[{size}]KM[{komi:g}]"
+            f"PB[Black]PW[White]RE[{'B' if winner == BLACK else 'W'}+R]")
+    body = []
+    for i, m in enumerate(moves):
+        color = "B" if i % 2 == 0 else "W"
+        if m == size * size:
+            body.append(f";{color}[]")
+        else:
+            r, c = divmod(int(m), size)
+            pt = chr(97 + c) + chr(97 + (size - 1 - r))
+            body.append(f";{color}[{pt}]")
+    return head + "".join(body) + ")"

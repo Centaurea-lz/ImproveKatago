@@ -16,7 +16,7 @@ def _make_mcts():
 def test_search_returns_valid_policy():
     mcts = _make_mcts()
     b = GoBoard(size=9)
-    probs = mcts.search(b)
+    probs, _ = mcts.search(b)
     legal = b.legal_moves()
     assert probs.shape == (82,)
     assert abs(probs.sum() - 1.0) < 1e-6
@@ -30,7 +30,7 @@ def test_search_after_some_moves():
     b = GoBoard(size=9)
     b.play(40)   # center-ish
     b.play(41)
-    probs = mcts.search(b)
+    probs, _ = mcts.search(b)
     legal = b.legal_moves()
     assert abs(probs.sum() - 1.0) < 1e-6
     assert (probs[~legal] == 0).all()
