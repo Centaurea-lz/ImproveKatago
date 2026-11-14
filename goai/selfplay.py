@@ -15,7 +15,7 @@ from .sgf_data import moves_to_sgf
 
 def play_game(net, device="cuda", board_size=19, num_simulations=100,
               batch_size=64, temperature=1.0, temp_moves=20,
-              max_moves=300, dirichlet=True,
+              max_moves=300, dirichlet=True, no_pass_moves=30,
               resign_threshold=-0.9, resign_consecutive=5,
               sgf_dir=None, game_id=0):
     """Play one self-play game; return (samples, final_board).
@@ -35,7 +35,11 @@ def play_game(net, device="cuda", board_size=19, num_simulations=100,
         probs, value = mcts.search(board, dirichlet=dirichlet)  # value: mover's perspective
         traj.append((encode(board), probs, board.current))
         t = temperature if move_num < temp_moves else 0.0
-        move = sample_move(probs, temperature=t, legal=board.legal_moves())
+        legal = board.legal_moves()
+        if move_num < no_pass_moves:
+            legal = legal.copy()
+            legal[board.pass_move] = False  # never pass in the opening
+        move = sample_move(probs, temperature=t, legal=legal)
         moves.append(int(move))
         board.play(move)
         move_num += 1

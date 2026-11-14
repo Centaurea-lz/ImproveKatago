@@ -76,6 +76,7 @@ class MCTS:
                 noise = np.random.dirichlet([self.dirichlet_alpha] * n)
                 probs[board_legal] = ((1 - self.dirichlet_eps) * probs[board_legal]
                                       + self.dirichlet_eps * noise)
+            probs /= probs.sum()
 
         # expand only the top-max_children moves (+ pass) to keep the tree small
         selected = {node.board.pass_move}
