@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Model checkpoints / data (large; generated on the server)
+*.pt
+*.pth
+*.npz
+*.npy
+*.tar.gz
+*.tgz
+*.zip
+*.sgf
+
+# Logs
+*.log
+
+# Checkpoint / output directories
+ckpt*/
+ckpt_*/
+kgs*/
+data/
+runs/

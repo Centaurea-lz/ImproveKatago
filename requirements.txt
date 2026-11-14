@@ -1,0 +1,5 @@
+numpy
+torch>=2.1
+sgfmill
+flask
+# TensorRT is installed separately on the GPU server (not via pip).
