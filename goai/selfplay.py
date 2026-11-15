@@ -30,6 +30,7 @@ def play_game(net, device="cuda", board_size=19, num_simulations=100,
     moves = []
     move_num = 0
     bad_count = 0
+    resigned = False
 
     while not board.done and move_num < max_moves:
         probs, value = mcts.search(board, dirichlet=dirichlet)  # value: mover's perspective
@@ -50,9 +51,16 @@ def play_game(net, device="cuda", board_size=19, num_simulations=100,
         else:
             bad_count = 0
         if bad_count >= resign_consecutive:
+            resigned = True
             break
 
-    winner = board.winner if board.done else board.current
+    if board.done:
+        winner = board.winner
+    elif resigned:
+        winner = board.current  # opponent of the resigning side wins
+    else:
+        board._end_game()       # hit move cap: decide by Tromp-Taylor score
+        winner = board.winner
 
     if sgf_dir is not None:
         os.makedirs(sgf_dir, exist_ok=True)
