@@ -15,7 +15,7 @@ from .sgf_data import moves_to_sgf
 
 def play_game(net, device="cuda", board_size=19, num_simulations=100,
               batch_size=64, temperature=1.0, temp_moves=20,
-              max_moves=300, dirichlet=True, no_pass_moves=30,
+              max_moves=300, dirichlet=True, no_pass_moves=120,
               resign_threshold=-0.9, resign_consecutive=5,
               sgf_dir=None, game_id=0):
     """Play one self-play game; return (samples, final_board).
