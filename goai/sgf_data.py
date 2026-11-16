@@ -57,8 +57,27 @@ def sgf_to_samples(data: bytes, board_size: int = 9):
 def iter_sgf_files(directory):
     for root, _dirs, files in os.walk(directory):
         for f in sorted(files):
-            if f.endswith(".sgf") or f.endswith(".sgf.gz"):
+            if f.endswith(".sgf") or f.endswith(".sgf.gz") or f.endswith(".sgfs"):
                 yield os.path.join(root, f)
+
+
+def _split_sgfs(data):
+    """Split a multi-game .sgfs file into individual game byte strings."""
+    text = data.decode("utf-8", "replace")
+    games = []
+    depth = 0
+    start = None
+    for i, ch in enumerate(text):
+        if ch == "(":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0 and start is not None:
+                games.append(text[start:i + 1].encode("utf-8"))
+                start = None
+    return games
 
 
 def _read(path):
@@ -76,15 +95,20 @@ def build_dataset(sgf_dir, out_path, board_size=9, max_samples=1_000_000):
     V = np.zeros(max_samples, dtype=np.float32)
     idx = 0
     for path in iter_sgf_files(sgf_dir):
-        try:
-            samples = sgf_to_samples(_read(path), board_size)
-        except Exception:
-            continue
-        for x, m, v in samples:
-            X[idx] = x
-            M[idx] = m
-            V[idx] = v
-            idx += 1
+        data = _read(path)
+        games = _split_sgfs(data) if path.endswith(".sgfs") else [data]
+        for game_data in games:
+            try:
+                samples = sgf_to_samples(game_data, board_size)
+            except Exception:
+                continue
+            for x, m, v in samples:
+                X[idx] = x
+                M[idx] = m
+                V[idx] = v
+                idx += 1
+                if idx >= max_samples:
+                    break
             if idx >= max_samples:
                 break
         if idx >= max_samples:
