@@ -15,6 +15,7 @@ venv/
 *.tgz
 *.zip
 *.sgf
+*.sgfs
 
 # Logs
 *.log
