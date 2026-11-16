@@ -25,7 +25,7 @@ def play_game(net, device="cuda", board_size=19, num_simulations=100,
     """
     board = GoBoard(size=board_size, superko=False)
     mcts = MCTS(net, device=device, num_simulations=num_simulations,
-                batch_size=batch_size)
+                batch_size=batch_size, pass_penalty=5.0)
     traj = []   # (features, policy, player_color)
     moves = []
     move_num = 0

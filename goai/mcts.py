@@ -40,7 +40,7 @@ class MCTS:
     def __init__(self, net, device="cuda", c_puct=1.1, c_fpu=0.2,
                  num_simulations=100, batch_size=48,
                  dirichlet_alpha=0.03, dirichlet_eps=0.25,
-                 max_children=48):
+                 max_children=48, pass_penalty=0.0):
         self.net = net.eval()
         self.device = device
         self.c_puct = c_puct
@@ -50,6 +50,7 @@ class MCTS:
         self.dirichlet_alpha = dirichlet_alpha
         self.dirichlet_eps = dirichlet_eps
         self.max_children = max_children
+        self.pass_penalty = pass_penalty
 
     # ---- neural net ----
     def _evaluate(self, boards):
@@ -64,6 +65,7 @@ class MCTS:
         legal = node.board.legal_moves()
         l = logits.copy()
         l[~legal] = -1e30
+        l[node.board.pass_move] -= self.pass_penalty  # discourage premature pass
         l = l - l.max()
         probs = np.exp(l)
         probs /= probs.sum()
