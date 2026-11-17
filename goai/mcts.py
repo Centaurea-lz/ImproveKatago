@@ -51,11 +51,13 @@ class MCTS:
         self.dirichlet_eps = dirichlet_eps
         self.max_children = max_children
         self.pass_penalty = pass_penalty
+        self.root = None  # current tree root, reused across moves
 
     # ---- neural net ----
     def _evaluate(self, boards):
         xs = np.stack([encode(b) for b in boards])
         x = torch.from_numpy(xs).to(self.device)
+        x = x.to(dtype=self.net.conv.weight.dtype)  # fp16 if the net is halved
         with torch.no_grad():
             logits, values = self.net(x)
         return logits.cpu().numpy(), values.cpu().numpy().reshape(-1)
@@ -63,7 +65,7 @@ class MCTS:
     # ---- tree ops ----
     def _expand(self, node, logits, dirichlet=False):
         legal = node.board.legal_moves()
-        l = logits.copy()
+        l = logits.copy().astype(np.float32)  # avoid fp16 overflow in masking
         l[~legal] = -1e30
         l[node.board.pass_move] -= self.pass_penalty  # discourage premature pass
         l = l - l.max()
@@ -151,13 +153,19 @@ class MCTS:
 
     # ---- public ----
     def _search_root(self, board: GoBoard, dirichlet=True):
-        root = Node(board.clone())
-        logits, values = self._evaluate([board])
-        self._expand(root, logits[0], dirichlet=dirichlet)
-        root.visit_count = 1
-        root.value_sum = float(values[0])
+        root = self.root
+        if (root is None
+                or not np.array_equal(root.board.board, board.board)
+                or root.board.current != board.current
+                or root.board.ko_point != board.ko_point):
+            root = Node(board.clone())
+            logits, values = self._evaluate([board])
+            self._expand(root, logits[0], dirichlet=dirichlet)
+            root.visit_count = 1
+            root.value_sum = float(values[0])
         while root.visit_count < self.num_simulations:
             self._run_batch(root)
+        self.root = root
         return root
 
     def search(self, board: GoBoard, dirichlet=True):
@@ -184,6 +192,15 @@ class MCTS:
                 best_lcb = lcb
                 best = move
         return best
+
+    def advance(self, move):
+        """Descend to the child after `move` is played (tree reuse)."""
+        if self.root is not None and move in self.root.children:
+            child = self.root.children[move]
+            child.parent = None
+            self.root = child
+        else:
+            self.root = None
 
     def _policy(self, root) -> np.ndarray:
         n = root.board.n + 1

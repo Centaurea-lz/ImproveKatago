@@ -93,6 +93,9 @@ class OurBot:
     def choose_move(self, board: GoBoard) -> int:
         return self.mcts.best_move(board, lcb_factor=2.0)
 
+    def advance(self, move: int):
+        self.mcts.advance(move)
+
 
 def play_match(our_bot, gtp, our_color, size=19, komi=7.5, max_moves=400):
     """Play one match; return winner color (BLACK/WHITE)."""
@@ -111,7 +114,9 @@ def play_match(our_bot, gtp, our_color, size=19, komi=7.5, max_moves=400):
             if "resign" in vertex.lower():
                 board.winner = our_color
                 return our_color
-            board.play(gtp_to_flat(vertex, size))
+            move = gtp_to_flat(vertex, size)
+            board.play(move)
+        our_bot.advance(move)
         move_num += 1
     if board.done:
         return board.winner
@@ -133,6 +138,7 @@ def main():
     ap.add_argument("--gnugo-level", type=int, default=10)
     ap.add_argument("--board-size", type=int, default=19)
     ap.add_argument("--komi", type=float, default=7.5)
+    ap.add_argument("--fp16", action="store_true", help="use FP16 inference")
     ap.add_argument("--device", default="cuda")
     args = ap.parse_args()
 
@@ -141,6 +147,8 @@ def main():
                          blocks=args.blocks).to(device)
     net.load_state_dict(torch.load(args.model, map_location=device))
     net = net.eval()
+    if args.fp16:
+        net = net.half()
     bot = OurBot(net, device=device, sims=args.sims)
 
     gnugo = GTPEngine(["gnugo", "--mode", "gtp",
