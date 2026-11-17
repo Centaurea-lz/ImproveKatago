@@ -62,7 +62,7 @@ def main():
             X = torch.from_numpy(np.stack([b[0] for b in batch])).float().to(device)
             P = torch.from_numpy(np.stack([b[1] for b in batch])).float().to(device)
             Z = torch.tensor([b[2] for b in batch], dtype=torch.float32, device=device)
-            logits, v = net(X)
+            logits, v, _own, _score = net(X)
             loss_p = -(P * F.log_softmax(logits, dim=1)).sum(1).mean()
             loss_v = F.mse_loss(v.view(-1), Z)
             loss = loss_p + loss_v

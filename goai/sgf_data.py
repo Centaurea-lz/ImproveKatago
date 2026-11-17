@@ -35,7 +35,12 @@ def _winrate_from_comment(comment):
 
 
 def sgf_to_samples(data: bytes, board_size: int = 9):
-    """Replay one SGF game and return its samples, or [] if unsuitable."""
+    """Replay one SGF game; return (feat, move, value, ownership, score) samples.
+
+    ownership is the final per-point ownership (+1/-1/0) from the mover's
+    perspective; score is the final score difference / 20 from the mover's
+    perspective.
+    """
     try:
         game = sgf.Sgf_game.from_bytes(data)
     except Exception:
@@ -50,8 +55,11 @@ def sgf_to_samples(data: bytes, board_size: int = 9):
     else:
         return []  # no decisive result
 
-    board = GoBoard(size=board_size, komi=game.get_komi() or 7.5, superko=False)
-    samples = []
+    komi = game.get_komi() or 7.5
+
+    # first pass: collect moves and play to the end
+    board = GoBoard(size=board_size, komi=komi, superko=False)
+    moves = []
     try:
         for node in game.get_main_sequence():
             if any(node.get_setup_stones()):
@@ -59,20 +67,38 @@ def sgf_to_samples(data: bytes, board_size: int = 9):
             colour, move = node.get_move()
             if colour is None:
                 continue
-            if move is None:
-                mi = board.pass_move
-            else:
-                mi = move[0] * board_size + move[1]
-            # soft value target: teacher's winrate (side to move) if available
-            wr = _winrate_from_comment(node.get("C"))
+            mi = board.pass_move if move is None else move[0] * board_size + move[1]
+            try:
+                comment = node.get("C")
+            except KeyError:
+                comment = None
+            moves.append((colour, mi, comment))
+            board.play(mi)
+    except (ValueError, AssertionError):
+        return []  # illegal under our rules -> skip
+
+    own_black = board.ownership(BLACK)       # (size, size)
+    score_black = board.score_for(BLACK) / 20.0
+
+    # second pass: replay and generate samples
+    board2 = GoBoard(size=board_size, komi=komi, superko=False)
+    samples = []
+    try:
+        for colour, mi, comment in moves:
+            feats = encode(board2)
+            wr = _winrate_from_comment(comment)
             if wr is not None:
                 value = 2.0 * wr - 1.0
             else:
                 value = black_win if colour == "b" else -black_win
-            samples.append((encode(board), mi, value))
-            board.play(mi)
+            if colour == "b":
+                own, score = own_black, score_black
+            else:
+                own, score = -own_black, -score_black
+            samples.append((feats, mi, value, own, score))
+            board2.play(mi)
     except (ValueError, AssertionError):
-        return []  # illegal under our rules -> skip
+        return []
     return samples
 
 
@@ -115,6 +141,8 @@ def build_dataset(sgf_dir, out_path, board_size=9, max_samples=1_000_000):
     X = np.zeros((max_samples, 17, board_size, board_size), dtype=np.uint8)  # 0/1 features
     M = np.zeros(max_samples, dtype=np.int64)
     V = np.zeros(max_samples, dtype=np.float32)
+    O = np.zeros((max_samples, board_size, board_size), dtype=np.int8)  # -1/0/1
+    S = np.zeros(max_samples, dtype=np.float32)
     idx = 0
     for path in iter_sgf_files(sgf_dir):
         data = _read(path)
@@ -124,10 +152,12 @@ def build_dataset(sgf_dir, out_path, board_size=9, max_samples=1_000_000):
                 samples = sgf_to_samples(game_data, board_size)
             except Exception:
                 continue
-            for x, m, v in samples:
+            for x, m, v, o, s in samples:
                 X[idx] = x
                 M[idx] = m
                 V[idx] = v
+                O[idx] = o
+                S[idx] = s
                 idx += 1
                 if idx >= max_samples:
                     break
@@ -137,7 +167,8 @@ def build_dataset(sgf_dir, out_path, board_size=9, max_samples=1_000_000):
             break
     if idx == 0:
         raise RuntimeError("no samples parsed from " + sgf_dir)
-    np.savez_compressed(out_path, X=X[:idx], move=M[:idx], value=V[:idx])
+    np.savez_compressed(out_path, X=X[:idx], move=M[:idx], value=V[:idx],
+                        own=O[:idx], score=S[:idx])
     return idx
 
 

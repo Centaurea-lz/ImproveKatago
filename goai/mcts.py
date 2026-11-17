@@ -59,7 +59,7 @@ class MCTS:
         x = torch.from_numpy(xs).to(self.device)
         x = x.to(dtype=self.net.conv.weight.dtype)  # fp16 if the net is halved
         with torch.no_grad():
-            logits, values = self.net(x)
+            logits, values, _own, _score = self.net(x)
         return logits.cpu().numpy(), values.cpu().numpy().reshape(-1)
 
     # ---- tree ops ----

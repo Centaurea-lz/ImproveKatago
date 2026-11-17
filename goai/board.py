@@ -221,6 +221,43 @@ class GoBoard:
         else:
             self.winner = EMPTY
 
+    def ownership(self, color: int):
+        """Per-point ownership from `color`'s perspective: +1 mine, -1 opp, 0 neutral."""
+        own = np.zeros(self.n, dtype=np.float32)
+        own[self.board == color] = 1.0
+        own[self.board == opponent(color)] = -1.0
+        visited = np.zeros(self.n, dtype=bool)
+        for p in range(self.n):
+            if self.board[p] != EMPTY or visited[p]:
+                continue
+            region = []
+            stack = [p]
+            visited[p] = True
+            border = set()
+            while stack:
+                q = stack.pop()
+                region.append(q)
+                for nb in self._neighbors(q):
+                    if self.board[nb] == EMPTY:
+                        if not visited[nb]:
+                            visited[nb] = True
+                            stack.append(nb)
+                    else:
+                        border.add(int(self.board[nb]))
+            if border == {color}:
+                for q in region:
+                    own[q] = 1.0
+            elif border == {opponent(color)}:
+                for q in region:
+                    own[q] = -1.0
+        return own.reshape(self.size, self.size)
+
+    def score_for(self, color: int) -> float:
+        """Final score difference (points) from `color`'s perspective."""
+        black, white = self._area_scores()
+        diff = black - white - self.komi  # black's perspective
+        return diff if color == BLACK else -diff
+
     def outcome_for(self, color: int) -> float:
         """+1 if `color` won, -1 if lost, 0 if draw (only meaningful when done)."""
         if self.winner == EMPTY:

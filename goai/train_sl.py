@@ -32,7 +32,7 @@ def main():
     args = ap.parse_args()
 
     d = np.load(args.data)
-    X, M, V = d["X"], d["move"], d["value"]
+    X, M, V, O, S = d["X"], d["move"], d["value"], d["own"], d["score"]
     n = X.shape[0]
     perm = np.random.permutation(n)
     split = int(0.95 * n)
@@ -46,9 +46,11 @@ def main():
     Xt = torch.from_numpy(X)  # uint8; cast to float32 per batch
     Mt = torch.from_numpy(M)
     Vt = torch.from_numpy(V)
+    Ot = torch.from_numpy(O.astype(np.float32))
+    St = torch.from_numpy(S)
 
     def make_loader(idx):
-        ds = TensorDataset(Xt[idx], Mt[idx], Vt[idx])
+        ds = TensorDataset(Xt[idx], Mt[idx], Vt[idx], Ot[idx], St[idx])
         return DataLoader(ds, batch_size=args.batch_size, shuffle=True,
                           pin_memory=(device.type == "cuda"))
 
@@ -70,13 +72,15 @@ def main():
     for epoch in range(args.epochs):
         net.train()
         tot_l = tot_p = tot_v = 0.0
-        for Xb, Mb, Vb in train_loader:
+        for Xb, Mb, Vb, Ob, Sb in train_loader:
             Xb = Xb.float().to(device)
-            Mb, Vb = Mb.to(device), Vb.to(device)
-            logits, v = net(Xb)
+            Mb, Vb, Ob, Sb = Mb.to(device), Vb.to(device), Ob.to(device), Sb.to(device)
+            logits, v, own, score = net(Xb)
             loss_p = F.cross_entropy(logits, Mb)
             loss_v = F.mse_loss(v.view(-1), Vb)
-            loss = loss_p + loss_v
+            loss_own = F.mse_loss(own, Ob.unsqueeze(1))
+            loss_score = F.mse_loss(score.view(-1), Sb)
+            loss = loss_p + loss_v + loss_own + 0.1 * loss_score
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -88,10 +92,10 @@ def main():
         net.eval()
         acc = tot = 0
         with torch.no_grad():
-            for Xb, Mb, Vb in val_loader:
+            for Xb, Mb, Vb, Ob, Sb in val_loader:
                 Xb = Xb.float().to(device)
                 Mb = Mb.to(device)
-                logits, _ = net(Xb)
+                logits, _v, _own, _score = net(Xb)
                 acc += (logits.argmax(1) == Mb).sum().item()
                 tot += Mb.size(0)
         nb = len(train_loader)
