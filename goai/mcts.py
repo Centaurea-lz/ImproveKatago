@@ -150,8 +150,7 @@ class MCTS:
             self._backup_virtual(path, float(val))
 
     # ---- public ----
-    def search(self, board: GoBoard, dirichlet=True):
-        """Run MCTS from `board`; return (policy over n+1 moves, root value)."""
+    def _search_root(self, board: GoBoard, dirichlet=True):
         root = Node(board.clone())
         logits, values = self._evaluate([board])
         self._expand(root, logits[0], dirichlet=dirichlet)
@@ -159,7 +158,32 @@ class MCTS:
         root.value_sum = float(values[0])
         while root.visit_count < self.num_simulations:
             self._run_batch(root)
+        return root
+
+    def search(self, board: GoBoard, dirichlet=True):
+        """Run MCTS from `board`; return (policy over n+1 moves, root value)."""
+        root = self._search_root(board, dirichlet=dirichlet)
         return self._policy(root), root.q()
+
+    def best_move(self, board: GoBoard, lcb_factor=2.0):
+        """Search and return the move with the highest lower-confidence bound.
+
+        More robust than argmax(visits): favours moves whose value is high AND
+        well-established (many visits), penalising uncertain few-visit moves.
+        """
+        root = self._search_root(board, dirichlet=False)
+        total = root.visit_count
+        best = board.pass_move
+        best_lcb = -1e30
+        for move, c in root.children.items():
+            if c.visit_count == 0:
+                continue
+            q = c.q()
+            lcb = q - lcb_factor * math.sqrt(math.log(total + 1) / c.visit_count)
+            if lcb > best_lcb:
+                best_lcb = lcb
+                best = move
+        return best
 
     def _policy(self, root) -> np.ndarray:
         n = root.board.n + 1

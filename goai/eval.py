@@ -91,8 +91,7 @@ class OurBot:
         self.mcts = MCTS(net, device=device, num_simulations=sims, batch_size=48)
 
     def choose_move(self, board: GoBoard) -> int:
-        probs, _ = self.mcts.search(board, dirichlet=False)
-        return int(np.argmax(probs))
+        return self.mcts.best_move(board, lcb_factor=2.0)
 
 
 def play_match(our_bot, gtp, our_color, size=19, komi=7.5, max_moves=400):
