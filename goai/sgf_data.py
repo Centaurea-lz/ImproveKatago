@@ -17,6 +17,23 @@ from .board import BLACK, GoBoard
 from .features import encode
 
 
+def _winrate_from_comment(comment):
+    """Extract the side-to-move winrate from a KataGo move comment.
+
+    KataGo comments look like '0.47 0.53 0.00 -0.3 v=400' where the first
+    number is the winrate of the side to move.
+    """
+    if not comment:
+        return None
+    try:
+        wr = float(str(comment).split()[0])
+        if 0.0 <= wr <= 1.0:
+            return wr
+    except (ValueError, IndexError):
+        pass
+    return None
+
+
 def sgf_to_samples(data: bytes, board_size: int = 9):
     """Replay one SGF game and return its samples, or [] if unsuitable."""
     try:
@@ -46,7 +63,12 @@ def sgf_to_samples(data: bytes, board_size: int = 9):
                 mi = board.pass_move
             else:
                 mi = move[0] * board_size + move[1]
-            value = black_win if colour == "b" else -black_win
+            # soft value target: teacher's winrate (side to move) if available
+            wr = _winrate_from_comment(node.get("C"))
+            if wr is not None:
+                value = 2.0 * wr - 1.0
+            else:
+                value = black_win if colour == "b" else -black_win
             samples.append((encode(board), mi, value))
             board.play(mi)
     except (ValueError, AssertionError):
