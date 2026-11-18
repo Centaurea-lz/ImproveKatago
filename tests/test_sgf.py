@@ -7,12 +7,13 @@ SGF = ("(;GM[1]FF[4]SZ[9]KM[7.5]RE[B+5.5]PB[black]PW[white]"
 def test_sgf_to_samples():
     samples = sgf_to_samples(SGF.encode(), board_size=9)
     assert len(samples) == 5
-    # value from mover's perspective: black wins -> B moves +1, W moves -1
-    values = [v for _, _, v, _, _ in samples]
-    assert values == [1.0, 0.0, 1.0, 0.0, 1.0]  # P(win): black wins -> B=1, W=0
-    for x, m, _v, o, _s in samples:
+    # z_win (hard outcome, mover's perspective): black wins -> B=1, W=0
+    z_win = [z for _, _, z, _w, _o, _s in samples]
+    assert z_win == [1.0, 0.0, 1.0, 0.0, 1.0]
+    for x, m, _z, w, o, _s in samples:
         assert x.shape == (17, 9, 9)
         assert 0 <= m <= 81
+        assert 0.0 <= w <= 1.0
         assert o.shape == (9, 9)
     # first move is the centre point (orientation-independent)
     assert samples[0][1] == 4 * 9 + 4
@@ -30,7 +31,7 @@ def test_moves_to_sgf_roundtrip():
     moves = [40, 30, 20, 47, size * size]  # last is a pass
     s = moves_to_sgf(moves, size, 7.5, BLACK)
     samples = sgf_to_samples(s.encode(), board_size=size)
-    assert [m for _, m, _v, _o, _s in samples] == moves
+    assert [m for _, m, _z, _w, _o, _s in samples] == moves
 
 
 if __name__ == "__main__":

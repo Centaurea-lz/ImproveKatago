@@ -28,11 +28,13 @@ def main():
     ap.add_argument("--batch-size", type=int, default=512)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--warmup", type=int, default=500)
+    ap.add_argument("--alpha-start", type=float, default=0.5,
+                    help="initial weight of teacher winrate; anneals to 0")
     ap.add_argument("--device", default="cuda")
     args = ap.parse_args()
 
     d = np.load(args.data)
-    X, M, V, O, S = d["X"], d["move"], d["value"], d["own"], d["score"]
+    X, M, Z, W, O, S = d["X"], d["move"], d["z_win"], d["winrate"], d["own"], d["score"]
     n = X.shape[0]
     perm = np.random.permutation(n)
     split = int(0.95 * n)
@@ -45,12 +47,13 @@ def main():
 
     Xt = torch.from_numpy(X)  # uint8; cast to float32 per batch
     Mt = torch.from_numpy(M)
-    Vt = torch.from_numpy(V)
+    Zt = torch.from_numpy(Z)
+    Wt = torch.from_numpy(W)
     Ot = torch.from_numpy(O.astype(np.float32))
     St = torch.from_numpy(S)
 
     def make_loader(idx):
-        ds = TensorDataset(Xt[idx], Mt[idx], Vt[idx], Ot[idx], St[idx])
+        ds = TensorDataset(Xt[idx], Mt[idx], Zt[idx], Wt[idx], Ot[idx], St[idx])
         return DataLoader(ds, batch_size=args.batch_size, shuffle=True,
                           pin_memory=(device.type == "cuda"))
 
@@ -72,13 +75,14 @@ def main():
     for epoch in range(args.epochs):
         net.train()
         tot_l = tot_p = tot_v = 0.0
-        for Xb, Mb, Vb, Ob, Sb in train_loader:
+        alpha = args.alpha_start * (1.0 - epoch / max(1, args.epochs - 1))
+        for Xb, Mb, Zb, Wb, Ob, Sb in train_loader:
             Xb = Xb.float().to(device)
-            Mb, Vb, Ob, Sb = Mb.to(device), Vb.to(device), Ob.to(device), Sb.to(device)
+            Mb, Zb, Wb, Ob, Sb = Mb.to(device), Zb.to(device), Wb.to(device), Ob.to(device), Sb.to(device)
             logits, v_logits, own, score = net(Xb)
             loss_p = F.cross_entropy(logits, Mb)
-            # value: cross-entropy on win/loss distribution (soft blended target)
-            p_win = Vb  # P(win) in [0, 1]
+            # value: cross-entropy, teacher winrate annealed toward the hard outcome
+            p_win = (1.0 - alpha) * Zb + alpha * Wb
             p_dist = torch.stack([p_win, 1.0 - p_win], dim=1)
             loss_v = -(p_dist * F.log_softmax(v_logits, dim=1)).sum(1).mean()
             loss_own = F.mse_loss(own, Ob.unsqueeze(1))
@@ -95,7 +99,7 @@ def main():
         net.eval()
         acc = tot = 0
         with torch.no_grad():
-            for Xb, Mb, Vb, Ob, Sb in val_loader:
+            for Xb, Mb, Zb, Wb, Ob, Sb in val_loader:
                 Xb = Xb.float().to(device)
                 Mb = Mb.to(device)
                 logits, _v, _own, _score = net(Xb)

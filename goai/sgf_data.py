@@ -17,9 +17,6 @@ from .board import BLACK, GoBoard
 from .features import encode
 
 
-WINRATE_BLEND = 0.3  # weight of the teacher winrate in the value target (0..1)
-
-
 def _winrate_from_comment(comment):
     """Extract the side-to-move winrate from a KataGo move comment.
 
@@ -89,17 +86,17 @@ def sgf_to_samples(data: bytes, board_size: int = 9):
     try:
         for colour, mi, comment in moves:
             feats = encode(board2)
+            # z_win = hard game outcome from the MOVER's perspective (0/1)
             z_win = 1.0 if ((black_win > 0) == (colour == "b")) else 0.0
+            # wr = teacher winrate from the MOVER's perspective (0..1)
             wr = _winrate_from_comment(comment)
-            if wr is not None:
-                value = (1.0 - WINRATE_BLEND) * z_win + WINRATE_BLEND * wr  # P(win) in [0,1]
-            else:
-                value = z_win
+            if wr is None:
+                wr = z_win  # fall back to the hard label when no comment
             if colour == "b":
                 own, score = own_black, score_black
             else:
                 own, score = -own_black, -score_black
-            samples.append((feats, mi, value, own, score))
+            samples.append((feats, mi, z_win, wr, own, score))
             board2.play(mi)
     except (ValueError, AssertionError):
         return []
@@ -144,7 +141,8 @@ def build_dataset(sgf_dir, out_path, board_size=9, max_samples=1_000_000):
     """Parse a directory of SGF files into a compressed .npz dataset."""
     X = np.zeros((max_samples, 17, board_size, board_size), dtype=np.uint8)  # 0/1 features
     M = np.zeros(max_samples, dtype=np.int64)
-    V = np.zeros(max_samples, dtype=np.float32)
+    Z = np.zeros(max_samples, dtype=np.float32)  # z_win (hard, 0/1)
+    W = np.zeros(max_samples, dtype=np.float32)  # teacher winrate (0..1)
     O = np.zeros((max_samples, board_size, board_size), dtype=np.int8)  # -1/0/1
     S = np.zeros(max_samples, dtype=np.float32)
     idx = 0
@@ -156,10 +154,11 @@ def build_dataset(sgf_dir, out_path, board_size=9, max_samples=1_000_000):
                 samples = sgf_to_samples(game_data, board_size)
             except Exception:
                 continue
-            for x, m, v, o, s in samples:
+            for x, m, zw, wr, o, s in samples:
                 X[idx] = x
                 M[idx] = m
-                V[idx] = v
+                Z[idx] = zw
+                W[idx] = wr
                 O[idx] = o
                 S[idx] = s
                 idx += 1
@@ -171,8 +170,8 @@ def build_dataset(sgf_dir, out_path, board_size=9, max_samples=1_000_000):
             break
     if idx == 0:
         raise RuntimeError("no samples parsed from " + sgf_dir)
-    np.savez_compressed(out_path, X=X[:idx], move=M[:idx], value=V[:idx],
-                        own=O[:idx], score=S[:idx])
+    np.savez_compressed(out_path, X=X[:idx], move=M[:idx], z_win=Z[:idx],
+                        winrate=W[:idx], own=O[:idx], score=S[:idx])
     return idx
 
 
