@@ -86,11 +86,7 @@ def sgf_to_samples(data: bytes, board_size: int = 9):
     try:
         for colour, mi, comment in moves:
             feats = encode(board2)
-            wr = _winrate_from_comment(comment)
-            if wr is not None:
-                value = 2.0 * wr - 1.0
-            else:
-                value = black_win if colour == "b" else -black_win
+            value = black_win if colour == "b" else -black_win  # hard game outcome
             if colour == "b":
                 own, score = own_black, score_black
             else:
