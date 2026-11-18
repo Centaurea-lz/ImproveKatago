@@ -145,7 +145,7 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     net = PolicyValueNet(args.board_size, channels=args.channels,
                          blocks=args.blocks).to(device)
-    net.load_state_dict(torch.load(args.model, map_location=device))
+    net.load_state_dict(torch.load(args.model, map_location=device), strict=False)
     net = net.eval()
     if args.fp16:
         net = net.half()

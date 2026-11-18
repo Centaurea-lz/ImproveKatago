@@ -18,6 +18,10 @@ class GlobalPool(nn.Module):
     def __init__(self, channels: int):
         super().__init__()
         self.fc = nn.Linear(channels * 2, channels)
+        # zero-init so a fresh global-pool branch is a no-op (ResNet-style);
+        # also lets old checkpoints (trained without global pooling) load cleanly
+        nn.init.zeros_(self.fc.weight)
+        nn.init.zeros_(self.fc.bias)
 
     def forward(self, x):
         b, c, _, _ = x.shape
