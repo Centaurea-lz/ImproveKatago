@@ -17,6 +17,9 @@ from .board import BLACK, GoBoard
 from .features import encode
 
 
+WINRATE_BLEND = 0.3  # weight of the teacher winrate in the value target (0..1)
+
+
 def _winrate_from_comment(comment):
     """Extract the side-to-move winrate from a KataGo move comment.
 
@@ -86,7 +89,12 @@ def sgf_to_samples(data: bytes, board_size: int = 9):
     try:
         for colour, mi, comment in moves:
             feats = encode(board2)
-            value = black_win if colour == "b" else -black_win  # hard game outcome
+            z_win = 1.0 if ((black_win > 0) == (colour == "b")) else 0.0
+            wr = _winrate_from_comment(comment)
+            if wr is not None:
+                value = (1.0 - WINRATE_BLEND) * z_win + WINRATE_BLEND * wr  # P(win) in [0,1]
+            else:
+                value = z_win
             if colour == "b":
                 own, score = own_black, score_black
             else:

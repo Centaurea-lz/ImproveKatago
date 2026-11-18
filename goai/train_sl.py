@@ -75,9 +75,12 @@ def main():
         for Xb, Mb, Vb, Ob, Sb in train_loader:
             Xb = Xb.float().to(device)
             Mb, Vb, Ob, Sb = Mb.to(device), Vb.to(device), Ob.to(device), Sb.to(device)
-            logits, v, own, score = net(Xb)
+            logits, v_logits, own, score = net(Xb)
             loss_p = F.cross_entropy(logits, Mb)
-            loss_v = F.mse_loss(v.view(-1), Vb)
+            # value: cross-entropy on win/loss distribution (soft blended target)
+            p_win = Vb  # P(win) in [0, 1]
+            p_dist = torch.stack([p_win, 1.0 - p_win], dim=1)
+            loss_v = -(p_dist * F.log_softmax(v_logits, dim=1)).sum(1).mean()
             loss_own = F.mse_loss(own, Ob.unsqueeze(1))
             loss_score = F.mse_loss(score.view(-1), Sb)
             loss = loss_p + loss_v + loss_own + 0.1 * loss_score

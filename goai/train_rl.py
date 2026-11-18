@@ -62,9 +62,12 @@ def main():
             X = torch.from_numpy(np.stack([b[0] for b in batch])).float().to(device)
             P = torch.from_numpy(np.stack([b[1] for b in batch])).float().to(device)
             Z = torch.tensor([b[2] for b in batch], dtype=torch.float32, device=device)
-            logits, v, _own, _score = net(X)
+            logits, v_logits, _own, _score = net(X)
             loss_p = -(P * F.log_softmax(logits, dim=1)).sum(1).mean()
-            loss_v = F.mse_loss(v.view(-1), Z)
+            # value: cross-entropy with one-hot target from ±1 outcome
+            p_win = (Z + 1.0) / 2.0
+            p_dist = torch.stack([p_win, 1.0 - p_win], dim=1)
+            loss_v = -(p_dist * F.log_softmax(v_logits, dim=1)).sum(1).mean()
             loss = loss_p + loss_v
             optimizer.zero_grad()
             loss.backward()

@@ -59,8 +59,10 @@ class MCTS:
         x = torch.from_numpy(xs).to(self.device)
         x = x.to(dtype=self.net.conv.weight.dtype)  # fp16 if the net is halved
         with torch.no_grad():
-            logits, values, _own, _score = self.net(x)
-        return logits.cpu().numpy(), values.cpu().numpy().reshape(-1)
+            logits, v_logits, _own, _score = self.net(x)
+        # value logits -> scalar win probability in [-1, 1]
+        values = 2.0 * torch.softmax(v_logits, dim=1)[:, 0] - 1.0
+        return logits.cpu().numpy(), values.cpu().numpy()
 
     # ---- tree ops ----
     def _expand(self, node, logits, dirichlet=False):

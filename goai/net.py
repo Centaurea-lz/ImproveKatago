@@ -67,11 +67,11 @@ class PolicyValueNet(nn.Module):
         self.policy_bn = nn.BatchNorm2d(1)
         self.policy_pass = nn.Linear(channels, 1)
 
-        # value head
+        # value head: 2 logits (win, loss) -> softmax (KataGo-style classification)
         self.value_conv = nn.Conv2d(channels, 1, 1)
         self.value_bn = nn.BatchNorm2d(1)
         self.value_fc1 = nn.Linear(board_size * board_size, channels)
-        self.value_fc2 = nn.Linear(channels, 1)
+        self.value_fc2 = nn.Linear(channels, 2)
 
         # ownership head: per-point +1 (mine) / -1 (opponent) / 0
         self.own_conv = nn.Conv2d(channels, 1, 1)
@@ -91,14 +91,14 @@ class PolicyValueNet(nn.Module):
         p_board = p.view(p.size(0), -1)
         policy = torch.cat([p_board, self.policy_pass(g)], dim=1)
 
-        # value
+        # value: 2 logits (win, loss)
         v = F.relu(self.value_bn(self.value_conv(x))).view(x.size(0), -1)
-        v = torch.tanh(self.value_fc2(F.relu(self.value_fc1(v))))
+        v_logits = self.value_fc2(F.relu(self.value_fc1(v)))
 
         # ownership + score
         own = torch.tanh(self.own_conv(x))
         score = self.score_fc(g)
-        return policy, v, own, score
+        return policy, v_logits, own, score
 
 
 def num_params(model: nn.Module) -> int:

@@ -9,7 +9,7 @@ def test_sgf_to_samples():
     assert len(samples) == 5
     # value from mover's perspective: black wins -> B moves +1, W moves -1
     values = [v for _, _, v, _, _ in samples]
-    assert values == [1.0, -1.0, 1.0, -1.0, 1.0]
+    assert values == [1.0, 0.0, 1.0, 0.0, 1.0]  # P(win): black wins -> B=1, W=0
     for x, m, _v, o, _s in samples:
         assert x.shape == (17, 9, 9)
         assert 0 <= m <= 81
