@@ -97,7 +97,7 @@ class MCTS:
         node.is_expanded = True
         for move in selected:
             child_board = node.board.clone()
-            child_board.play(move)
+            child_board.play_unchecked(move)
             node.children[move] = Node(child_board, move=move, parent=node,
                                        prior=float(probs[move]))
 

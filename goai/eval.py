@@ -115,7 +115,12 @@ def play_match(our_bot, gtp, our_color, size=19, komi=7.5, max_moves=400):
                 board.winner = our_color
                 return our_color
             move = gtp_to_flat(vertex, size)
-            board.play(move)
+            # The opponent is a trusted engine; its move is legal under ITS
+            # rules (e.g. KataGo uses positional superko). Our board uses
+            # simple ko, whose heuristic can rarely flag a legal move as
+            # illegal, so apply the move unchecked (the capture logic is the
+            # same either way).
+            board.play_unchecked(move)
         our_bot.advance(move)
         move_num += 1
     if board.done:
@@ -136,6 +141,9 @@ def main():
     ap.add_argument("--sims", type=int, default=100)
     ap.add_argument("--games", type=int, default=10)
     ap.add_argument("--gnugo-level", type=int, default=10)
+    ap.add_argument("--engine-cmd", default=None,
+                    help="opponent GTP command, space-separated (overrides gnugo)")
+    ap.add_argument("--label", default=None, help="opponent label for reporting")
     ap.add_argument("--board-size", type=int, default=19)
     ap.add_argument("--komi", type=float, default=7.5)
     ap.add_argument("--fp16", action="store_true", help="use FP16 inference")
@@ -151,24 +159,28 @@ def main():
         net = net.half()
     bot = OurBot(net, device=device, sims=args.sims)
 
-    gnugo = GTPEngine(["gnugo", "--mode", "gtp",
-                       "--level", str(args.gnugo_level)])
+    if args.engine_cmd:
+        engine = GTPEngine(args.engine_cmd.split())
+        label = args.label or "opponent"
+    else:
+        engine = GTPEngine(["gnugo", "--mode", "gtp",
+                            "--level", str(args.gnugo_level)])
+        label = args.label or f"GNU Go level {args.gnugo_level}"
 
     wins = 0
     for g in range(args.games):
         our_color = BLACK if g % 2 == 0 else WHITE  # alternate colors
-        winner = play_match(bot, gnugo, our_color, size=args.board_size,
+        winner = play_match(bot, engine, our_color, size=args.board_size,
                             komi=args.komi)
         won = winner == our_color
         wins += won
         print(f"game {g}: our_color={our_color} winner={winner} "
               f"{'WIN' if won else 'LOSS'}", flush=True)
 
-    gnugo.close()
+    engine.close()
     wr = wins / args.games
     print(f"result: {wins}/{args.games} win_rate={wr:.3f} "
-          f"elo_diff={elo_from_winrate(wr):+.1f} (vs GNU Go level "
-          f"{args.gnugo_level})", flush=True)
+          f"elo_diff={elo_from_winrate(wr):+.1f} (vs {label})", flush=True)
 
 
 if __name__ == "__main__":

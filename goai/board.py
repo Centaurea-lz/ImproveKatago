@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .fastboard import legal_moves_fast, play_fast
+
 EMPTY = 0
 BLACK = 1
 WHITE = 2
@@ -135,9 +137,12 @@ class GoBoard:
 
     def legal_moves(self) -> np.ndarray:
         """Boolean array of length n+1; index n is the pass move."""
-        legal = np.zeros(self.n + 1, dtype=bool)
         if self.done:
-            return legal
+            return np.zeros(self.n + 1, dtype=bool)
+        if not self.superko:
+            return legal_moves_fast(self.board, self.n, self.size,
+                                    self.current, self.ko_point)
+        legal = np.zeros(self.n + 1, dtype=bool)
         legal[self.pass_move] = True
         for p in range(self.n):
             if self.board[p] == EMPTY and self._would_be_legal(p):
@@ -150,25 +155,39 @@ class GoBoard:
             raise ValueError("game already over")
         if not self._would_be_legal(move):
             raise ValueError(f"illegal move {move}")
+        return self._apply(move)
 
+    def play_unchecked(self, move: int) -> "GoBoard":
+        """Play a move already known to be legal (skips the legality check).
+
+        Used on the MCTS hot path, where children are expanded from the legal
+        move set produced by legal_moves()."""
+        return self._apply(move)
+
+    def _apply(self, move: int) -> "GoBoard":
         if move == self.pass_move:
             self.consecutive_passes += 1
         else:
             self.consecutive_passes = 0
-            opp = opponent(self.current)
-            self.board[move] = self.current
-            captured: list[int] = []
-            for nb in self._neighbors(move):
-                if self.board[nb] == opp:
-                    group, libs = self._group(nb)
-                    if not libs:
-                        captured.extend(group)
-                        self._remove(group)
-            group, libs = self._group(move)
-            if len(captured) == 1 and len(group) == 1 and len(libs) == 1:
-                self.ko_point = captured[0]
+            if not self.superko:
+                self.board, self.ko_point = play_fast(self.board, self.n,
+                                                      self.size, move,
+                                                      self.current)
             else:
-                self.ko_point = -1
+                opp = opponent(self.current)
+                self.board[move] = self.current
+                captured: list[int] = []
+                for nb in self._neighbors(move):
+                    if self.board[nb] == opp:
+                        group, libs = self._group(nb)
+                        if not libs:
+                            captured.extend(group)
+                            self._remove(group)
+                group, libs = self._group(move)
+                if len(captured) == 1 and len(group) == 1 and len(libs) == 1:
+                    self.ko_point = captured[0]
+                else:
+                    self.ko_point = -1
 
         self.recent.append(self.board.copy())
         if len(self.recent) > self.history_len:
